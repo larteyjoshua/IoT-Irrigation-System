@@ -6,12 +6,11 @@ Date: 31st May, 2019
 Author: John PK Erbynn - john.erbynn@gmail.com
 """
 
-import sqlite3
 import csv
-
+import psycopg2
 def generate_csv_file(parameter):
     # database connection
-    con = sqlite3.connect('IotIrrigation.db')
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
 
     # selecting particular water parameter data from DB

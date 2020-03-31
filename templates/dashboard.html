@@ -11,7 +11,7 @@
     <!-- refreshes the page with 10 seconds interval -->
     <meta http-equiv="refresh" content="15">
     <!-- refreshes the page with 30 seconds interval -->
-    <meta http-equiv="refresh" content="10">
+    
 
     <!-- Bootstrap CDN -->
     <!-- <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css"
@@ -145,6 +145,118 @@
     {{ toastr.include_toastr_css() }}
     {{ toastr.message() }}
     
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.js" type="text/javascript">
+    </script>
+    
+    <script type="text/javascript" language = "javascript">
+    
+    var client;
+    console.log("Connecting");
+    var host= "mqtt.dioty.co"
+    var reconnectTimeout = 2000;
+      // Create a client instance
+      // ############# ATTENTION: Enter Your MQTT TLS Port and host######## Supports only TLS Port
+    
+      function MQTTconnect() {
+      client = new Paho.MQTT.Client(host,  8080,"web_" + parseInt(Math.random() * 100, 10));
+      // t callback handlers
+      client.onConnectionLost = onConnectionLost;
+      client.onMessageArrived = onMessageArrived;
+      
+     //############# ATTENTION: Enter Your MQTT user and password details ########  
+     var options = {
+        timeout: 3,
+        useSSL: false,
+        userName: "larteyjoshua@gmail.com",
+        password: "7f8a9110",
+        onSuccess:onConnect,
+      
+      };
+      client.connect(options);
+    }
+    
+      // connect the client
+     
+    
+      // called when the client connects
+      function onConnect() {
+        // Once a connection has been made, make a subscription and send a message.
+        console.log("onConnect");
+        client.subscribe("/larteyjoshua@gmail.com/test");
+       var  message = new Paho.MQTT.Message("Pump Control Connected");
+        message.destinationName = "/larteyjoshua@gmail.com/SystemInfo";
+        client.send(message);
+      }
+      
+    
+      function pumpState(state) {
+        if(state == 1) { message = new Paho.MQTT.Message("on"); }
+        if(state == 0) { message = new Paho.MQTT.Message("off"); }
+        if(state == 3) { message = new Paho.MQTT.Message("automatic"); }
+        if(state == 4) { message = new Paho.MQTT.Message("manual"); }
+        message.destinationName = "/larteyjoshua@gmail.com/test";
+        client.send(message);
+      }
+      function doFail(e){
+        console.log(e);
+      }
+    
+      // called when the client loses its connection
+      function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+          console.log("onConnectionLost:"+responseObject.errorMessage);
+        }
+      }
+    
+      // called when a message arrives
+      function onMessageArrived(message) {
+        console.log("onMessageArrived:"+message.payloadString);
+      }
+    </script>
+<script src="//code.jquery.com/jquery-1.10.2.js"></script>
+<script>
+
+$(document).ready(function() {
+    
+  $("#status").click(function () {
+  $("#option").toggle()
+});
+});
+
+$(document).ready(function() {
+    $("#onoff").hide()
+  $("#man").click(function () {
+  $("#onoff").toggle()
+});
+});
+
+$(document).ready(function() {
+  $("#auto").click(function () {
+  $("#man").toggle()
+});
+});
+$(document).ready(function() {
+  $("#man").click(function () {
+  $("#auto").toggle()
+});
+});
+
+
+
+$(document).ready(function() {
+  $("#on").click(function () {
+  $("#on").toggle()
+});
+});
+$(document).ready(function() {
+  $("#off").click(function () {
+  $("#on").toggle()
+});
+});
+</script>
+
+
 </head>
 
 
@@ -207,8 +319,12 @@
                 <li class="breadcrumb-item">Home</li>
                 <li class="breadcrumb-item active">Dashboard</li>
                 <li></li> <img src="/static/images/flow.jpg" width="40"
-                    style="margin-left: 300px; margin-right: 10px; margin-bottom: 3px"> <form action=""><button class="btn btn-info" type="submit" style="margin-right:20px;">WATER PUMP STATUS: </button><a class="btn btn-success" href="#" role="button">ON</a>
-                        <button class="btn btn-danger" type="submit">OFF</button></form></li>
+                    style="margin-left: 100px; margin-right: 10px; margin-bottom: 3px">
+                    <button class="btn btn-info"  style="margin-right:20px;" id="status">WATER PUMP STATUS: </button>
+                   <div id="option"> <button class="btn btn-primary"  style="margin-right:30px;" onclick="pumpState(3)" id="auto">Automatic</button>
+                    </button><button class="btn btn-warning"  style="margin-right:10px;" onclick="pumpState(4)" id="man">Manual:</button></div>
+                   <div id="onoff"> <button class="btn btn-success" style="margin-right:10px;" onclick="pumpState(1)" id="on">ON</button>
+                    <button class="btn btn-danger" onclick="pumpState(0)" id="off">OFF</button></div></li>
             </ol>
         </nav>
     </div>
@@ -311,9 +427,9 @@
                 <td>{{ d[0] }}</td>
                 <td>{{ d[1] }}</td>
                 <td>{{ d[2] }}</td>
-                <td>{{ d[3] }}</td>
-                <td>{{ d[4] }}</td>
                 <td>{{ d[5] }}</td>
+                <td>{{ d[4] }}</td>
+                <td>{{ d[3] }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -340,6 +456,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.6/umd/popper.min.js" integrity="sha384-wHAiFfRlMFy6i5SRaxvfOCifBUQy1xHdJ/yoi7FRNXMRBu5WHdZYu1hA6ZOblgut" crossorigin="anonymous"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/js/bootstrap.min.js" integrity="sha384-B0UglyR+jN6CkvvICOB2joaf5I4l3gm9GU6Hc1og6Ls7i6U/mkkaduKaBhlAXv9k" crossorigin="anonymous"></script> -->
 
+    <script  >
+        MQTTconnect();
+       
+        </script>
     <!-- the chart.min must come first b4 the dataset -->
     <script src="../static/js/Chart.js"></script>
     <script src="../static/js/charts_dataset.js"></script>

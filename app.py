@@ -2,14 +2,15 @@ from flask import Flask, render_template, flash, redirect, request, jsonify, url
 # from aquaLite import *
 import datetime
 import json
-import sqlite3
 import time
 import statistics as stat
 import mail
 from config import credential
 import generator
 from flask_toastr import Toastr     # toastr module import
-import create_database
+import paho.mqtt.client as mqtt
+import json
+import psycopg2
 
 
 app = Flask(__name__)
@@ -41,62 +42,81 @@ def index():
     return render_template("index.html", todayDate=datetime.date.today(), )
 
 
-# posting collected data to database
-# @app.route("/postData", methods=["POST"])
-# def create_data():
+def on_connect(client, userdata, rc):
+    if rc == 0:
+          print("Connected successfully.")
+    else:
+         print("Connection failed. rc= "+str(rc))
 
-#     """
-#     To remotely access this route and post data after deployment on Heroku, use:
-#         <deployed link>/postData
-#         Eg; https://wqms.herokuapp.com/postData
-#     """
+def on_publish(client, userdata, mid):
+    print("Message "+str(mid)+" published.")
+    
+def on_subscribe(client, userdata, mid, granted_qos):
+     print("Subscribe with mid "+str(mid)+" received.")
 
-#     print(">>> posting data ....")
-#     ## expected data format from microcontroller;
-#      ##"temperatureValue", "turbidityValue", "phValue", "waterlevelValue"
-#     data = request.data
+def on_message(client, userdata, msg):
+    print("Topic: ", msg.topic)
+    print("Messages: ", str(msg.payload.decode("utf-8")))
+    if (msg.topic)==("/larteyjoshua@gmail.com/test"):
+        print(" Pump is ",str(msg.payload.decode("utf-8")))
+    if (msg.topic)==("/larteyjoshua@gmail.com/SensorData"):
+        print("Sensor Reading update")
+        data= json.loads(msg.payload.decode("utf-8"))
 
-#     # # decoding bytes data to string
-#     decoded_data = data.decode('utf-8')  
-#     key = ['temperature', 'turbidity', 'ph', 'water_level']
+       
+        print("connecting to DB")
+        # con = sqlite3.connect(':memory:') # when db locks
+        con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
+        cursor = con.cursor()
+        print("connect to DB")   
+        
+        #  print("creating  DB")
+        #  cursor.execute("CREATE TABLE SensorRecords(id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, time TIMESdTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,temperature REAL,water_used REAL,ph REAL,moisture REAL);")
+        # # cursor.commit()
+                                
+        # # print('...inside create db fxn') 
 
-#     ## data into list
-#     string_value = decoded_data.split(',')
+        # # # if not included, creates only DB without any table    
+        cursor = con.cursor()
 
-#     # # dictionary processing
-#     value = []
-#     for v in string_value:
-#        v = float(v)
-#        value.append(v)
+        print('before try...')
+        try:
+            cursor.execute(""" INSERT INTO SensorRecords( temperature, water_used, ph, moisture) 
+                            VALUES (%s, %s, %s, %s) """,
+                    (data["temperature"], data["waterused"], data["ph"], data["moisture"]))
+            con.commit()
+            cursor.close()
+            con.close()
+            print("Data posted SUCCESSFULLY")
+        except Exception as err:
+            print('...posting data FAILED')
+            print(err)
+            
+    
+   
+mqttclient = mqtt.Client()
 
-#     # #merge to dict()
-#     data = dict(zip(key, value))
-#     print(data)
+                # Assign event callbacks
+mqttclient.on_connect = on_connect
+mqttclient.on_publish = on_publish
+mqttclient.on_subscribe = on_subscribe
+mqttclient.on_message = on_message
 
+                # Connect
+mqttclient.username_pw_set("larteyjoshua@gmail.com", "7f8a9110")
+mqttclient.connect("mqtt.dioty.co", 1883)
 
-#     """
-#     for testing purposes with Postman(json data format), use:
-#         request.json and comment code above to line 79(data.request)
-#     """
-#     # data = request.json
-#     # # print(data)
+                # Start subscription
+mqttclient.subscribe("/larteyjoshua@gmail.com/test")
+mqttclient.subscribe("/larteyjoshua@gmail.com/SensorData")
 
+mqttclient.subscribe("/larteyjoshua@gmail.com/SystemInfo")
 
-#     """
-#   This code snippet handles database posting
-    con = sqlite3.connect('IotIrrigation.db')
-    cursor = con.cursor()
+           # Publish a message
+mqttclient.publish("/larteyjoshua@gmail.com/SystemInfo", "Front End Connected to the Broker")
 
-    print('before try...')
-    try:
-        cursor.execute(""" INSERT INTO SensorRecords( temperature, water_used, ph, moisture) 
-                         VALUES (?, ?, ?, ?) """,
-                   (data["temperature"], data["water_used"], data["ph"], data["moisture"]))
-        con.commit()
-        print("Data posted SUCCESSFULLY")
-    except Exception as err:
-        print('...posting data FAILED')
-        print(err)
+mqttclient.loop_start()
+
 
 
 
@@ -123,7 +143,7 @@ range_temp = 0
 def temperature(x):
     print(">>> temperature page running ...")
     # connecting to datebase
-    con = sqlite3.connect('IotIrrigation.db')
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
 
     #  30secs time interval for pushing data from sensor to database, that the limit of data to be determined  
@@ -134,7 +154,7 @@ def temperature(x):
         label = 'Minute'
 
         # with 30 seconds interval, ...2,880 temperature data will be posted within an hour
-        cursor.execute(" SELECT time,temperature FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) order by id asc ") 
+        cursor.execute("SELECT time,temperature FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 )as x order by id asc ") 
         data = cursor.fetchall()
         
         # emptying list 
@@ -142,11 +162,12 @@ def temperature(x):
         del temp[:]
     
         for datum in data:
+            # print(datum)
             # temperature data extraction
             datum_float = float(datum[1])
             temp.append(datum_float)
             # time extraction
-            t = str(datum[0][14:])
+            t = str(datum[0])[14:]
             time.append(t)
         
         # analysis
@@ -173,7 +194,7 @@ def temperature(x):
             # print(datum)
             datum_float = float(datum[1])
             temp.append(datum_float)
-            t = str(datum[0][11:16])
+            t = str(datum[0])[11:16]
             time.append(t)
         
         # analysis
@@ -210,7 +231,7 @@ def temperature(x):
             temp.append(datum_float)        # pushing to temp list
 
             # string day processing from full timestamp
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -255,7 +276,7 @@ def temperature(x):
             temp.append(datum_float)        # pushing to temp list
 
             # string month processing from full date timestamp
-            tm = str(datum[0][5:10])
+            tm = str(datum[0])[5:10]
             time.append(tm)
 
          # analysis
@@ -293,7 +314,7 @@ def temperature(x):
             temp.append(datum_float)        # pushing to temp list
 
             # string month processing from full date timestamp
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -320,7 +341,7 @@ def temperature(x):
 
         # fetching data from database.....change number of data to fetch
         # cursor.execute(" SELECT time,temperature FROM iot_wqms_table ORDER BY id DESC LIMIT 1440") 
-        cursor.execute(" SELECT time,temperature FROM ( SELECT * from SensorRecords ORDER BY id DESC ) order by id asc") 
+        cursor.execute(" SELECT time,temperature FROM ( SELECT * from SensorRecords ORDER BY id DESC ) as x order by id asc") 
         data = cursor.fetchall()
 
         # emptying time and temperature container list
@@ -334,7 +355,7 @@ def temperature(x):
             datum_float = float(datum[1])   # temp data in float
             temp.append(datum_float)        # pushing to temp list
             # string month processing from full date timestamp
-            tm = str(datum[0][:7])
+            tm = str(datum[0])[:7]
             time.append(tm)
             
          # analysis
@@ -352,7 +373,7 @@ def temperature(x):
 def powerOfHydrogen(x):
     print(">>> ph page running ...")
     # connecting to datebase
-    con = sqlite3.connect('IotIrrigation.db')
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
 
     # data processing for an hour 
@@ -361,7 +382,7 @@ def powerOfHydrogen(x):
         label = 'Minute'
 
         # selecting ph data
-        cursor.execute(" SELECT time, ph FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) order by id asc ") 
+        cursor.execute(" SELECT time, ph FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 )as x order by id asc ") 
         data = cursor.fetchall()
         # print(data)
 
@@ -376,7 +397,7 @@ def powerOfHydrogen(x):
             datum_float = float(datum[1])
             ph.append(datum_float)
             # extracting minutes and seconds
-            t = str(datum[0][14:])
+            t = str(datum[0])[14:]
             time.append(t)
         
         # analysis
@@ -405,7 +426,7 @@ def powerOfHydrogen(x):
             datum_float = float(datum[1])
             ph.append(datum_float)
             # extracting minutes and seconds
-            t = str(datum[0][11:16])
+            t = str(datum[0])[11:16]
             time.append(t)
 
         # analysis
@@ -442,7 +463,7 @@ def powerOfHydrogen(x):
             ph.append(datum_float)        # pushing to ph list
 
             # string day processing from full timestamp
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -481,7 +502,7 @@ def powerOfHydrogen(x):
             ph.append(datum_float)       
 
             # extracting month from full timestamp
-            tm = str(datum[0][5:10])
+            tm = str(datum[0])[5:10]
             time.append(tm)
         
          # analysis
@@ -516,7 +537,7 @@ def powerOfHydrogen(x):
             ph.append(datum_float)        # pushing to temp list
 
             # string month processing from full date timestamp
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -538,7 +559,7 @@ def powerOfHydrogen(x):
     if x == 'all':
         name = 'All'
         label = "Time"
-        cursor.execute(" SELECT time, ph FROM ( SELECT * from SensorRecords ORDER BY id DESC ) order by id asc") 
+        cursor.execute(" SELECT time, ph FROM ( SELECT * from SensorRecords ORDER BY id DESC )as x order by id asc") 
         data = cursor.fetchall()
         
         # emptying 
@@ -551,7 +572,7 @@ def powerOfHydrogen(x):
             ph.append(datum_float)        # pushing to ph list
 
             # string month processing from full date timestamp
-            tm = str(datum[0][:7])
+            tm = str(datum[0])[:7]
             time.append(tm)
             
         # analysis
@@ -567,19 +588,19 @@ def powerOfHydrogen(x):
 @app.route("/moistChart/<x>")
 def moist(x):
     print(">>> moisture page running ...")
-    con = sqlite3.connect('IotIrrigation.db')
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
     if x == '1h':
         name = '1 Hour'
         label = 'Minute'
-        cursor.execute(" SELECT time, moisture FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) order by id asc ") 
+        cursor.execute(" SELECT time, moisture FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) as x order by id asc ") 
         data = cursor.fetchall()
         del time[:]
         del moisture[:]
         for datum in data:
             datum_float = float(datum[1])
             moisture.append(datum_float)
-            t = str(datum[0][14:])
+            t = str(datum[0])[14:]
             time.append(t)
         average_moisture = round(stat.mean(moisture), 2)
         min_moisture = round(min(moisture), 2)
@@ -599,7 +620,7 @@ def moist(x):
         for datum in data:
             datum_float = float(datum[1])
             moisture.append(datum_float)
-            t = str(datum[0][11:16])
+            t = str(datum[0])[11:16]
             time.append(t)
         # to 2 decimal places
         average_moisture = round( stat.mean(moisture) , 2)
@@ -621,7 +642,7 @@ def moist(x):
             # print(datum)
             datum_float = float(datum[1])   # ph data in float
             moisture.append(datum_float)        # pushing to ph list
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -643,7 +664,7 @@ def moist(x):
         for datum in data:
             datum_float = float(datum[1])   # ph data to float
             moisture.append(datum_float)       
-            tm = str(datum[0][5:10])
+            tm = str(datum[0])[5:10]
             time.append(tm)
         average_moisture = round( stat.mean(moisture) , 2)
         min_moisture = round(min(moisture), 2)
@@ -663,7 +684,7 @@ def moist(x):
         for datum in data:
             datum_float = float(datum[1])   # temp data in float
             moisture.append(datum_float)        # pushing to temp list
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -678,14 +699,14 @@ def moist(x):
     if x == 'all':
         name = 'All'
         label = "Time"
-        cursor.execute(" SELECT time, moisture FROM ( SELECT * from SensorRecords ORDER BY id DESC ) order by id asc") 
+        cursor.execute(" SELECT time, moisture FROM ( SELECT * from SensorRecords ORDER BY id DESC )as x order by id asc") 
         data = cursor.fetchall()
         del time[:]
         del moisture[:]
         for datum in data:
             datum_float = float(datum[1])   # ph data in float
             moisture.append(datum_float)        # pushing to ph list
-            tm = str(datum[0][:7])
+            tm = str(datum[0])[:7]
             time.append(tm)
         average_moisture = round( stat.mean(moisture) , 2)
         min_moisture = round(min(moisture), 2)
@@ -699,19 +720,19 @@ def moist(x):
 @app.route("/waterusedChart/<x>")
 def wateramount(x):
     print(">>> waterused page running ...")
-    con = sqlite3.connect('IotIrrigation.db')
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
     if x == '1h':
         name = '1 Hour'
         label = 'Minute'
-        cursor.execute(" SELECT time, water_used FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) order by id asc ") 
+        cursor.execute(" SELECT time, water_used FROM ( SELECT * from SensorRecords ORDER BY id DESC LIMIT 120 ) as x order by id asc ") 
         data = cursor.fetchall()
         del time[:]
         del water_used[:]
         for datum in data:
             datum_float = float(datum[1])
             water_used.append(datum_float)
-            t = str(datum[0][14:])
+            t = str(datum[0])[14:]
             time.append(t)
         average_water_used = round(stat.mean(water_used), 2)
         min_water_used = round(min(water_used), 2)
@@ -729,7 +750,7 @@ def wateramount(x):
         for datum in data:
             datum_float = float(datum[1])
             water_used.append(datum_float)
-            t = str(datum[0][11:16])
+            t = str(datum[0])[11:16]
             time.append(t)
         average_water_used = round( stat.mean(water_used) , 2)
         min_water_used = round(min(water_used), 2)
@@ -750,7 +771,7 @@ def wateramount(x):
             # print(datum)
             datum_float = float(datum[1])   # ph data in float
             water_used.append(datum_float)        # pushing to ph list
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -772,7 +793,7 @@ def wateramount(x):
         for datum in data:
             datum_float = float(datum[1])   # ph data to float
             water_used.append(datum_float)       
-            tm = str(datum[0][5:10])
+            tm = str(datum[0])[5:10]
             time.append(tm)
         average_water_used = round( stat.mean(water_used) , 2)
         min_water_used = round(min(water_used), 2)
@@ -792,7 +813,7 @@ def wateramount(x):
         for datum in data:
             datum_float = float(datum[1])   # temp data in float
             water_used.append(datum_float)        # pushing to temp list
-            tm = str(datum[0][:10])
+            tm = str(datum[0])[:10]
             tm_split = tm.split("-")
             year = int(tm_split[0])
             month = int(tm_split[1])
@@ -807,14 +828,14 @@ def wateramount(x):
     if x == 'all':
         name = 'All'
         label = "Time"
-        cursor.execute(" SELECT time, water_used FROM ( SELECT * from SensorRecords ORDER BY id DESC ) order by id asc") 
+        cursor.execute(" SELECT time, water_used FROM ( SELECT * from SensorRecords ORDER BY id DESC )as x order by id asc") 
         data = cursor.fetchall()
         del time[:]
         del water_used[:]
         for datum in data:
             datum_float = float(datum[1])   # ph data in float
             water_used.append(datum_float)        # pushing to ph list
-            tm = str(datum[0][:7])
+            tm = str(datum[0])[:7]
             time.append(tm)
         average_water_used = round( stat.mean(water_used) , 2)
         min_water_used = round(min(water_used), 2)
@@ -835,7 +856,8 @@ def wateramount(x):
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
     print(">>> dashboard running ...")
-    con = sqlite3.connect('IotIrrigation.db')
+    
+    con = psycopg2.connect("dbname='IotIrrigation' user='postgres' host='localhost' password='12345678'")
     cursor = con.cursor()
 
     # selecting current hour data ...ie, 120 for every 30 seconds of posting
@@ -854,9 +876,9 @@ def dashboard():
     # collecting individual data to collectors
     for row in data:
         temp_data.append(row[2])   
-        moisture_data.append(row[3])
+        moisture_data.append(row[5])
         ph_data.append(row[4])
-        waterused_data.append(row[5])
+        waterused_data.append(row[3])
 
     # last value added to database...current data recorded 
     last_temp_data = temp_data[0]
@@ -891,9 +913,9 @@ def dashboard():
     prev_waterused_data = []
     for row in data:
         prev_temp_data.append(row[2])
-        prev_moisture_data.append(row[3])
+        prev_moisture_data.append(row[5])
         prev_ph_data.append(row[4])
-        prev_waterused_data.append(row[5])
+        prev_waterused_data.append(row[3])
 
     # slicing for immediate previous 120 data 
     prev_temp_data = prev_temp_data[120:240]
@@ -1006,10 +1028,9 @@ def get_CSV(prop):
 if  __name__ == "__main__":
     try:
         # using local ip address and auto pick up changes
-        app.run(debug=True, port=5000)  # host='10.10.65.5', port=5000
+        app.run(debug=True, port=5000, use_reloader=False)  # host='10.10.65.5', port=5000
 
-        # create database for the system if on not created
-        create_database.create_table()
+        
 
         # using static ip
         # app.run(debug=True, host='192.168.43.110 ', port=5050)   # setting your own ip
