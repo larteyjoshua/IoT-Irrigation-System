@@ -79,6 +79,17 @@ def on_message(client, userdata, msg):
         # # # if not included, creates only DB without any table    
         cursor = con.cursor()
 
+#     CREATE TABLE public.sensorrecords
+# (
+#     id integer NOT NULL DEFAULT nextval('sensorrecords_id_seq'::regclass),
+#     "time" timestamp(0) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+#     temperature real,
+#     water_used real,
+#     ph real,
+#     moisture real,
+#     CONSTRAINT sensorrecords_pkey PRIMARY KEY (id)
+# )
+
         print('before try...')
         try:
             cursor.execute(""" INSERT INTO SensorRecords( temperature, water_used, ph, moisture) 
@@ -113,7 +124,9 @@ mqttclient.subscribe("/larteyjoshua@gmail.com/SensorData")
 mqttclient.subscribe("/larteyjoshua@gmail.com/SystemInfo")
 
            # Publish a message
+           
 mqttclient.publish("/larteyjoshua@gmail.com/SystemInfo", "Front End Connected to the Broker")
+# 12345678
 
 mqttclient.loop_start()
 
